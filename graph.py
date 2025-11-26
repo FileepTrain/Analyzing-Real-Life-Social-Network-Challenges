@@ -1,17 +1,18 @@
 import networkx as nx
-import nx_cugraph as nxcg # gpu  of network x
+#import nx_cugraph as nxcg # gpu version of network x
 import matplotlib.pyplot as plt
 import numpy as np
 import os 
 import json
 G = nx.read_edgelist(path='./facebook_combined.txt')
 
-os.environ['NX_CUGRAPH_AUTOCONFIG'] = "True"
+#os.environ['NX_CUGRAPH_AUTOCONFIG'] = "True"
 def main():
     #takes about 2 minutes to get page_rank and centrality
-    page_rank = sorted(nxcg.pagerank(G).items(), key=lambda item: item[1], reverse=True)
-    centrality = sorted(nxcg.betweenness_centrality(G).items(), key=lambda item: item[1], reverse=True)
-    clustering = sorted(nxcg.clustering(G).items(), key=lambda item: item[1], reverse=True)
+    page_rank = sorted(nx.pagerank(G).items(), key=lambda item: item[1], reverse=True)
+    centrality = sorted(nx.betweenness_centrality(G).items(), key=lambda item: item[1], reverse=True)
+    clustering = sorted(nx.clustering(G).items(), key=lambda item: item[1], reverse=True)
+    
     if(not os.path.exists('rank.json')):
         with open('rank.json', mode='w') as f:
             f.write(json.dumps(dict(page_rank)))
