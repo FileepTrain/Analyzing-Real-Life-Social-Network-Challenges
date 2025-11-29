@@ -1,16 +1,19 @@
-import collections
+#!/usr/bin/env python3
+import argparse
+import json
+import os
 import random
 
 import networkx as nx
-import matplotlib.pyplot as plt
 
 DATA_FILE = "facebook_combined.txt"
-TOP_K = 20  # top-k for degree, PageRank, betweenness
+CIRCLES_DIR = "facebook"
+STATS_JSON = "centrality_stats.json"
 NUM_RANDOM_RUNS = 200  # number of random cascades for stats
 
 
 # ---------------------------------------------------------------------
-# BASIC GRAPH STATS
+# GRAPH LOADING
 # ---------------------------------------------------------------------
 def load_graph(path: str) -> nx.Graph:
     print(f"[INFO] Loading graph from {path} ...")
@@ -19,78 +22,8 @@ def load_graph(path: str) -> nx.Graph:
     return G
 
 
-def basic_stats(G: nx.Graph):
-    print("===== BASIC STATS (COMBINED GRAPH) =====")
-    n = G.number_of_nodes()
-    m = G.number_of_edges()
-    density = nx.density(G)
-
-    print(f"Nodes: {n}")
-    print(f"Edges: {m}")
-    print(f"Density: {density:.6f}")
-
-    avg_clust = nx.average_clustering(G)
-    print(f"Average clustering coefficient: {avg_clust:.4f}\n")
-
-
 # ---------------------------------------------------------------------
-# CENTRALITIES
-# ---------------------------------------------------------------------
-def degree_analysis(G: nx.Graph, top_k: int = TOP_K):
-    print("===== DEGREE / INFLUENCE =====")
-    degrees = dict(G.degree())
-    top_degree = sorted(degrees.items(), key=lambda x: x[1], reverse=True)[:top_k]
-
-    print(f"Top {top_k} nodes by degree:")
-    for node, deg in top_degree:
-        print(f"  {node}: {deg}")
-    print()
-
-    return top_degree, degrees
-
-
-def pagerank_analysis(G: nx.Graph, top_k: int = TOP_K):
-    print("===== PAGERANK =====")
-    pr = nx.pagerank(G, alpha=0.85, max_iter=100, tol=1e-06)
-    top_pr = sorted(pr.items(), key=lambda x: x[1], reverse=True)[:top_k]
-
-    print(f"Top {top_k} nodes by PageRank:")
-    for node, score in top_pr:
-        print(f"  {node}: {score:.6f}")
-    print()
-
-    return top_pr, pr
-
-
-def betweenness_analysis(G: nx.Graph, top_k: int = TOP_K):
-    print("===== BETWEENNESS CENTRALITY =====")
-    bc = nx.betweenness_centrality(G, normalized=True)
-    top_bc = sorted(bc.items(), key=lambda x: x[1], reverse=True)[:top_k]
-
-    print(f"Top {top_k} nodes by betweenness:")
-    for node, score in top_bc:
-        print(f"  {node}: {score:.6f}")
-    print()
-
-    return top_bc, bc
-
-
-# ---------------------------------------------------------------------
-# EPIDEMIC NUMBER R0
-# ---------------------------------------------------------------------
-def extra_epidemic_numbers(G: nx.Graph):
-    n = G.number_of_nodes()
-    m = G.number_of_edges()
-    avg_deg = 2 * m / n
-
-    print("===== EPIDEMIC-STYLE R0 =====")
-    print(f"Average degree (k̄): {avg_deg:.2f}")
-    p = 0.05
-    print(f"Assuming p = {p}, R0 ≈ {p * avg_deg:.2f}\n")
-
-
-# ---------------------------------------------------------------------
-# CASCADE SIMULATIONS
+# CASCADE SIMULATIONS (YOUR ORIGINAL LOGIC)
 # ---------------------------------------------------------------------
 def cascade_return_adopted(G, seed, q=0.2, max_steps=50):
     """
@@ -185,11 +118,77 @@ def simulate_threshold_cascade_multi(G, seeds, q=0.2, max_steps=50):
     return len(adopted)
 
 
+def simulate_threshold_cascade_multi_blocked(G, seeds, blocked, q=0.2, max_steps=50):
+    """
+    Multi-seed version with 'blocked' nodes that never adopt.
+    """
+    blocked = set(blocked)
+    adopted = set(seeds) - blocked
+
+    if not adopted:
+        return 0
+
+    for _ in range(max_steps):
+        new = set()
+
+        for node in G.nodes():
+            if node in adopted or node in blocked:
+                continue
+            neigh = list(G.neighbors(node))
+            if not neigh:
+                continue
+            active = sum(1 for v in neigh if v in adopted)
+            if active / len(neigh) >= q:
+                new.add(node)
+
+        if not new:
+            break
+
+        adopted |= new
+
+    return len(adopted)
+
+
 # ---------------------------------------------------------------------
-# CASCADE GROUP TESTING
+# CIRCLE LOADING
+# ---------------------------------------------------------------------
+def load_all_circles(circles_dir: str = CIRCLES_DIR):
+    """
+    Load all circles from all *.circles files.
+
+    Returns a list of lists of node IDs (ints), one list per circle.
+    """
+    circles = []
+    if not os.path.isdir(circles_dir):
+        print(f"[WARN] Circles directory '{circles_dir}' not found; skipping circle-based cascades.")
+        return circles
+
+    for fname in os.listdir(circles_dir):
+        if not fname.endswith(".circles"):
+            continue
+        path = os.path.join(circles_dir, fname)
+        with open(path, "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) <= 1:
+                    continue
+                try:
+                    nodes = [int(x) for x in parts[1:]]
+                except ValueError:
+                    nodes = [int(x) for x in parts[1:] if x.isdigit()]
+                if nodes:
+                    circles.append(nodes)
+
+    return circles
+
+
+# ---------------------------------------------------------------------
+# CASCADE GROUP TESTING (RESTORED + EXTENDED)
 # ---------------------------------------------------------------------
 def cascade_tests_split(G, deg_top, pr_top, bc_top, q=0.2):
+    # ---------------- ORIGINAL TOP-20 CENTRALITY CASCADE TESTS ----------------
     print("===== CASCADE TESTS (TOP-20 CENTRAL NODES) =====")
+    print(f"[INFO] Using threshold q = {q}\n")
 
     deg_nodes = {n for n, _ in deg_top}
     pr_nodes = {n for n, _ in pr_top}
@@ -239,8 +238,8 @@ def cascade_tests_split(G, deg_top, pr_top, bc_top, q=0.2):
     joint_sz = simulate_threshold_cascade_multi(G, all_three, q=q)
     print(f"  Seeds {sorted(all_three)} → cascade size = {joint_sz}\n")
 
-    # ---------- RANDOM CASCADE STATS (NORMAL vs STUBBORN) ----------
-    print("===== RANDOM CASCADE STATS: NORMAL VS STUBBORN ALL-THREE =====")
+    # ---------------- RANDOM SINGLE-SEED: NORMAL vs STUBBORN ----------------
+    print("===== RANDOM CASCADE STATS: NORMAL VS STUBBORN ALL-THREE (SINGLE-SEED) =====")
     if not all_three:
         print("No nodes are in all three lists; cannot define stubborn core.\n")
         return
@@ -281,7 +280,7 @@ def cascade_tests_split(G, deg_top, pr_top, bc_top, q=0.2):
     print(f"Difference (normal - stubborn): {avg_size_normal - avg_size_blocked:.2f}\n")
 
     # ---------- INFECTION PROBABILITY ANALYSIS (NORMAL CASE) ----------
-    print("===== INFECTION PROBABILITIES (NORMAL CASE) =====")
+    print("===== INFECTION PROBABILITIES (NORMAL CASE, SINGLE-SEED) =====")
 
     # infection probability per node
     prob_normal = {v: infection_count_normal[v] / NUM_RANDOM_RUNS for v in all_nodes}
@@ -302,23 +301,82 @@ def cascade_tests_split(G, deg_top, pr_top, bc_top, q=0.2):
     print()
     print("Note: In the STUBBORN scenario, infection probability of the all-three nodes is 0 by definition.\n")
 
+    # ---------------- NEW: RANDOM CIRCLE-SEED CASCADE STATS ----------------
+    print("===== RANDOM CIRCLE-SEED CASCADE STATS: NORMAL VS STUBBORN ALL-THREE =====")
+
+    circles = load_all_circles(CIRCLES_DIR)
+    if not circles:
+        print("No circles available; skipping circle-based cascade experiment.\n")
+        return
+
+    # Filter circles to those that overlap G and have at least one non-blocked node
+    valid_circles = []
+    for nodes in circles:
+        nodes_in_G = [v for v in nodes if G.has_node(v)]
+        if not nodes_in_G:
+            continue
+        if all(v in blocked for v in nodes_in_G):
+            continue
+        valid_circles.append(nodes_in_G)
+
+    if not valid_circles:
+        print("No valid circles with non-blocked nodes; skipping circle-based experiment.\n")
+        return
+
+    total_circle_normal = 0
+    total_circle_blocked = 0
+
+    for _ in range(NUM_RANDOM_RUNS):
+        seeds = random.choice(valid_circles)
+
+        size_normal = simulate_threshold_cascade_multi(G, seeds, q=q)
+        size_blocked = simulate_threshold_cascade_multi_blocked(G, seeds, blocked, q=q)
+
+        total_circle_normal += size_normal
+        total_circle_blocked += size_blocked
+
+    avg_circle_normal = total_circle_normal / NUM_RANDOM_RUNS
+    avg_circle_blocked = total_circle_blocked / NUM_RANDOM_RUNS
+
+    print(f"Using {NUM_RANDOM_RUNS} random circle seeds")
+    print(f"Average cascade size (NORMAL, circle-seed):   {avg_circle_normal:.2f}")
+    print(f"Average cascade size (STUBBORN, circle-seed): {avg_circle_blocked:.2f}")
+    print(f"Difference (normal - stubborn):              {avg_circle_normal - avg_circle_blocked:.2f}\n")
+
 
 # ---------------------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------------------
 def main():
+    parser = argparse.ArgumentParser(description="Threshold cascade simulations on Facebook graph.")
+    parser.add_argument(
+        "--q",
+        type=float,
+        default=0.2,
+        help="Adoption threshold q (default=0.2)",
+    )
+    args = parser.parse_args()
+    q = args.q
+
+    # Load precomputed stats from basic_stats.py
+    try:
+        with open(STATS_JSON, "r") as f:
+            stats = json.load(f)
+    except FileNotFoundError:
+        print(f"[ERROR] {STATS_JSON} not found. Run basic_stats.py first.")
+        return
+
+    deg_top = [(int(n), int(d)) for n, d in stats["deg_top"]]
+    pr_top = [(int(n), float(s)) for n, s in stats["pr_top"]]
+    bc_top = [(int(n), float(s)) for n, s in stats["bc_top"]]
+
+    print("[INFO] Loaded centrality stats from basic_stats.py\n")
+
     G = load_graph(DATA_FILE)
-    basic_stats(G)
 
-    deg_top, _ = degree_analysis(G)
-    pr_top, _ = pagerank_analysis(G)
-    bc_top, _ = betweenness_analysis(G)
+    cascade_tests_split(G, deg_top, pr_top, bc_top, q=q)
 
-    extra_epidemic_numbers(G)
-
-    cascade_tests_split(G, deg_top, pr_top, bc_top, q=0.2)
-
-    print("[DONE]")
+    print("[DONE cascade_sim.py]")
 
 
 if __name__ == "__main__":
