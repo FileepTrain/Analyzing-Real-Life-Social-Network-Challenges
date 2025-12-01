@@ -59,8 +59,8 @@ def parse_args():
         help="Infection probability AFTER intervention (default: 0.01)."
     )
     parser.add_argument(
-        "--gamma-after", type=float, default=0.25,
-        help="Recovery probability AFTER intervention (default: 0.25)."
+        "--gamma-after", type=float, default=0.45,
+        help="Recovery probability AFTER intervention (default: 0.45)."
     )
     parser.add_argument(
         "--threshold-frac", type=float, default=0.10,
@@ -357,3 +357,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
