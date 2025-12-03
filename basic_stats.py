@@ -99,13 +99,12 @@ def main():
     G = load_graph(DATA_FILE)
     basic_stats(G)
 
-    deg_top, _ = degree_analysis(G)
-    pr_top, _ = pagerank_analysis(G)
-    bc_top, _ = betweenness_analysis(G)
+    deg_top, degrees = degree_analysis(G)
+    pr_top,  pr      = pagerank_analysis(G)
+    bc_top,  bc      = betweenness_analysis(G)
 
     avg_deg, p, R0 = extra_epidemic_numbers(G)
 
-    # Save centrality info so cascade_sim.py can reuse it
     payload = {
         "data_file": DATA_FILE,
         "top_k": TOP_K,
@@ -113,9 +112,14 @@ def main():
         "p_share": p,
         "R0": R0,
         "deg_top": [[int(n), int(d)] for n, d in deg_top],
-        "pr_top": [[int(n), float(s)] for n, s in pr_top],
-        "bc_top": [[int(n), float(s)] for n, s in bc_top],
+        "pr_top":  [[int(n), float(s)] for n, s in pr_top],
+        "bc_top":  [[int(n), float(s)] for n, s in bc_top],
+
+        # NEW: full centrality dicts for cascade_super_sim.py
+        "pagerank":    {int(n): float(s) for n, s in pr.items()},
+        "betweenness": {int(n): float(s) for n, s in bc.items()},
     }
+
 
     with open(STATS_JSON, "w") as f:
         json.dump(payload, f, indent=2)
